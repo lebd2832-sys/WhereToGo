@@ -2,7 +2,9 @@ plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
 android {
     namespace = "com.example.wheretogo"
     compileSdk = 34
-    defaultConfig { applicationId = "com.example.wheretogo"; minSdk = 24; targetSdk = 34; versionCode = 1; versionName = "0.1" }
+    defaultConfig { applicationId = "com.example.wheretogo"; minSdk = 24; targetSdk = 34; versionCode = 1; versionName = "0.2"
+        buildConfigField("String", "TOUR_KEY", "\"" + (System.getenv("TOUR_API_KEY") ?: "") + "\"") }
+    buildFeatures { buildConfig = true }
     buildTypes { release { isMinifyEnabled = false } }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }

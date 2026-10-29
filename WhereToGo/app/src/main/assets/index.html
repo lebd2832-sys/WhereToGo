@@ -1139,7 +1139,7 @@ function renderPanel(){
   $('#addOpen',p).addEventListener('click',openAdd);
   $$('[data-del]',p).forEach(b=>b.addEventListener('click',()=>{const all=userAll(),k=userKey();all[k]=(all[k]||[]).filter(x=>x.id!==b.dataset.del);store.set('wr_user',all);renderPanel();toast('삭제했어요')}));
  }
- if(G.tab==='food'||G.tab==='see') p.insertAdjacentHTML('beforeend','<p class="note">검수용 프로토타입이에요. 가게·명소 정보는 샘플이라 출시 전에 확인이 필요해요.</p>');
+ if((G.tab==='food'||G.tab==='see')&&!(TOUR.on&&Array.isArray(TOUR.cache[infoKey(G.last.region,G.last.sub)+'|'+curKind()]))) p.insertAdjacentHTML('beforeend','<p class="note">검수용 프로토타입이에요. 가게·명소 정보는 샘플이라 출시 전에 확인이 필요해요.</p>');
  p.scrollTop=top;
 }
 const addSheet=$('#addSheet');
@@ -1173,8 +1173,70 @@ const STAY_KINDS=[
 const kindCards=(name,kinds)=>'<div class="list">'+kinds.map(k=>'<div class="card"><div class="tx"><h3>'+esc(k.l)+'</h3><p>'+esc(k.d)+'</p></div><a class="go" href="'+esc(mapUrl(name+' '+k.q))+'" target="_blank" rel="noopener">지도<span class="sr"> 에서 '+esc(name+' '+k.l)+' 찾기</span></a></div>').join('')+'</div>';
 function chipRow(list,cur,label){return '<div class="cats" role="group" aria-label="'+label+'">'+list.map(([k,l])=>'<button class="cat" type="button" data-cat="'+k+'" aria-pressed="'+(cur===k)+'">'+esc(l)+'</button>').join('')+'</div>'}
 function curCat(){return G.tab==='food'?G.cat:G.tab==='see'?G.see:G.stay}
-function curCatLabel(){const L=G.tab==='food'?CATS.map(c=>[c.k,c.label]):G.tab==='see'?SEE_SUBS:STAY_SUBS;return (L.find(x=>x[0]===curCat())||[0,''])[1]}
+function curCatLabel(){if(TOUR.on&&G.tab==='food') return (FCATS.find(x=>x[0]===G.fcat)||[0,'맛집'])[1]==='전체'?'맛집':(FCATS.find(x=>x[0]===G.fcat)||[0,'맛집'])[1]; const L=G.tab==='food'?CATS.map(c=>[c.k,c.label]):G.tab==='see'?SEE_SUBS:STAY_SUBS;return (L.find(x=>x[0]===curCat())||[0,''])[1]}
+/* ---------- 한국관광공사 TourAPI: 안드로이드 앱 안에서만 동작(브라우저 미리보기에서는 샘플 데이터 그대로) ---------- */
+const TOUR={on:!!(window.Native&&window.Native.tour&&window.Native.hasKey&&window.Native.hasKey()),cb:{},n:0,cache:{}};
+window.__tourCb=(id,ok,text)=>{const f=TOUR.cb[id];delete TOUR.cb[id];if(f)f(ok,text)};
+const TOUR_REG={seoul:'11',busan:'26',daegu:'27',incheon:'28',gwangju:'29',daejeon:'30',ulsan:'31',sejong:'36',gyeonggi:'41',chungbuk:'43',chungnam:'44',jeonnam:'46',gyeongbuk:'47',gyeongnam:'48',jeju:'50',gangwon:'51',jeonbuk:'52'};
+const FCATS=[['all','전체'],['A05020100','한식'],['A05020200','서양식'],['A05020300','일식'],['A05020400','중식'],['A05020500','아시아식'],['A05020900','카페·찻집']];
+function tourCall(ep,p){return new Promise((res,rej)=>{
+ const id='t'+(++TOUR.n), to=setTimeout(()=>{delete TOUR.cb[id];rej(new Error('timeout'))},15000);
+ TOUR.cb[id]=(ok,t)=>{clearTimeout(to);if(!ok) return rej(new Error(t));
+  try{const j=JSON.parse(t),h=j.response&&j.response.header;if(!h||h.resultCode!=='0000') return rej(new Error((h&&h.resultMsg)||'bad'));
+   const it=j.response.body&&j.response.body.items;let a=it&&it.item?it.item:[];if(!Array.isArray(a)) a=[a];res(a)}catch(e){rej(e)}};
+ window.Native.tour(id,ep,JSON.stringify(p));
+})}
+async function tourCodes(r,sub){
+ const reg=TOUR_REG[r.id]; if(!sub) return [{lDongRegnCd:reg}];
+ let list=store.get('wr_ld_'+reg,null);
+ if(!list){const a=await tourCall('ldongCode2',{lDongRegnCd:reg,numOfRows:400,pageNo:1});list=a.map(x=>({c:String(x.code),n:String(x.name)}));store.set('wr_ld_'+reg,list)}
+ const m=list.filter(x=>x.n===sub||x.n.indexOf(sub+' ')===0), ex=m.filter(x=>x.n===sub), use=(ex.length?ex:m).slice(0,4);
+ if(!use.length) throw new Error('nocode');
+ return use.map(x=>({lDongRegnCd:reg,lDongSignguCd:x.c.length===5?x.c.slice(-3):x.c}));
+}
+const ymd=d=>d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0');
+async function tourData(kind){
+ const {region:r,sub}=G.last, codes=await tourCodes(r,sub), now=new Date();
+ const types=kind==='play'?['28','14']:kind==='see'?['12']:kind==='food'?['39']:[null], calls=[];
+ codes.forEach(c=>types.forEach(t=>{
+  if(kind==='event') calls.push(tourCall('searchFestival2',Object.assign({eventStartDate:ymd(new Date(now.getTime()-60*864e5)),numOfRows:40,pageNo:1},c)));
+  else if(kind==='stay') calls.push(tourCall('searchStay2',Object.assign({numOfRows:40,pageNo:1},c)));
+  else calls.push(tourCall('areaBasedList2',Object.assign({numOfRows:40,pageNo:1,contentTypeId:t},c)));
+ }));
+ const seen={}, out=[];
+ (await Promise.all(calls)).forEach(a=>a.forEach(x=>{
+  if(!x.title||seen[x.contentid]) return; seen[x.contentid]=1;
+  const o={n:String(x.title).replace(/\s*\(.*?\)\s*$/,'').trim()||x.title,addr:x.addr1||'',tel:x.tel||'',cat3:x.cat3||'',s:x.eventstartdate||'',e:x.eventenddate||''};
+  if(kind==='event'&&o.e&&o.e<ymd(now)) return;
+  out.push(o);
+ }));
+ if(kind==='event') out.sort((a,b)=>(a.s>b.s)-(a.s<b.s));
+ return out.slice(0,40);
+}
+const fmtD=d=>d&&d.length===8?(+d.slice(4,6))+'/'+(+d.slice(6)):'';
+function curKind(){return G.tab==='food'?'food':G.tab==='see'?(G.see==='see'?'see':'play'):G.tab==='camp'?(G.stay==='stay'?'stay':null):'event'}
+function renderTour(){
+ if(!TOUR.on||!G.last) return false;
+ const {region:r,sub}=G.last, panel=$('#panel'), name=destName(r,sub), kind=curKind(); if(!kind) return false;
+ const key=infoKey(r,sub)+'|'+kind, st=TOUR.cache[key]; if(st==='err') return false;
+ const keep=(panel.querySelector('.cats')||{}).scrollLeft||0;
+ const head=G.tab==='food'?chipRow(FCATS,G.fcat,'맛집 종류'):G.tab==='see'?chipRow(SEE_SUBS,G.see,'볼거리 또는 놀거리'):G.tab==='camp'?chipRow(STAY_SUBS,G.stay,'캠핑 또는 숙박'):'';
+ const bk=G.tab==='food'?'fcat':G.tab==='see'?'see':'stay';
+ const bind=()=>{if(!head) return; catScroll($('.cats',panel),keep);$$('.cat',panel).forEach(b=>b.addEventListener('click',()=>{G[bk]=b.dataset.cat;renderPanel()}))};
+ if(!Array.isArray(st)){
+  if(!st){TOUR.cache[key]='loading';
+   tourData(kind).then(a=>{TOUR.cache[key]=a}).catch(()=>{TOUR.cache[key]='err'}).then(()=>{if(G.last&&infoKey(G.last.region,G.last.sub)+'|'+curKind()===key&&$('#s-result').classList.contains('on')) renderPanel()})}
+  panel.innerHTML=head+'<div class="list"><div class="card empty"><div class="tx"><p>한국관광공사에서 '+esc(name)+' 정보를 불러오는 중…</p></div></div></div>'; bind(); return true;
+ }
+ let arr=st;
+ if(kind==='food'&&G.fcat!=='all') arr=arr.filter(x=>x.cat3===G.fcat);
+ const today=ymd(new Date());
+ const cards=kind==='event'?arr.map(e=>'<div class="card"><div class="tx"><h3>'+esc(e.n)+'<span class="live">'+(e.s<=today?'진행 중':'예정')+'</span></h3><p>'+esc(fmtD(e.s)+'~'+fmtD(e.e)+(e.addr?' · '+e.addr:''))+'</p></div><a class="go" href="'+esc(mapUrl(name+' '+e.n))+'" target="_blank" rel="noopener">지도</a></div>').join(''):arr.map(x=>itemCard(r,sub,{n:x.n,d:x.addr+(x.tel?' · '+x.tel:'')})).join('');
+ const empty=kind==='event'?emptyCard('지금 열리거나 곧 열리는 행사가 없어요.',name+' 축제'):emptyCard('불러온 정보가 없어요. 지도에서 직접 찾아보세요.',name+' '+({food:'맛집',see:'가볼만한곳',play:'체험',stay:'숙박'}[kind]));
+ panel.innerHTML=head+'<div class="list">'+(cards||empty)+'</div><p class="note">정보 제공: 한국관광공사 TourAPI</p>'; bind(); return true;
+}
 function renderPanel0(){
+ if(renderTour()) return;
  const {region:r,sub}=G.last, info=INFO[infoKey(r,sub)], name=destName(r,sub), panel=$('#panel');
  const keep=(panel.querySelector('.cats')||{}).scrollLeft||0;
  const bind=(key)=>{catScroll($('.cats',panel),keep);$$('.cat',panel).forEach(b=>b.addEventListener('click',()=>{G[key]=b.dataset.cat;renderPanel()}))};
@@ -1206,7 +1268,7 @@ function setTab(t){
  renderPanel();
 }
 function showResult(r,sub){
- clearTimers(); G.last={region:r,sub:sub}; G.tab='food'; G.see='see'; G.stay='camp';
+ clearTimers(); G.last={region:r,sub:sub}; G.fcat='all'; G.tab='food'; G.see='see'; G.stay='camp';
  const info=INFO[infoKey(r,sub)], food=(info&&info.food)||{};
  G.cat=(CATS.find(c=>food[c.k]&&food[c.k].length)||CATS[0]).k;
  const hero=$('#hero'); hero.style.setProperty('--tc','var(--'+r.color+')');

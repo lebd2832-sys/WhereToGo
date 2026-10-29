@@ -1189,19 +1189,20 @@ function tourCall(ep,p){return new Promise((res,rej)=>{
 async function tourCodes(r,sub){
  const reg=TOUR_REG[r.id]; if(!sub) return [{lDongRegnCd:reg}];
  let list=store.get('wr_ld_'+reg,null);
- if(!list){const a=await tourCall('ldongCode2',{lDongRegnCd:reg,numOfRows:400,pageNo:1});list=a.map(x=>({c:String(x.code),n:String(x.name)}));store.set('wr_ld_'+reg,list)}
+ if(!list){const a=await tourCall('KorService2/ldongCode2',{lDongRegnCd:reg,numOfRows:400,pageNo:1});list=a.map(x=>({c:String(x.code),n:String(x.name)}));store.set('wr_ld_'+reg,list)}
  const m=list.filter(x=>x.n===sub||x.n.indexOf(sub+' ')===0), ex=m.filter(x=>x.n===sub), use=(ex.length?ex:m).slice(0,4);
  if(!use.length) throw new Error('nocode');
  return use.map(x=>({lDongRegnCd:reg,lDongSignguCd:x.c.length===5?x.c.slice(-3):x.c}));
 }
 const ymd=d=>d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0');
 async function tourData(kind){
+ if(kind==='camp') return campData();
  const {region:r,sub}=G.last, codes=await tourCodes(r,sub), now=new Date();
  const types=kind==='play'?['28','14']:kind==='see'?['12']:kind==='food'?['39']:[null], calls=[];
  codes.forEach(c=>types.forEach(t=>{
-  if(kind==='event') calls.push(tourCall('searchFestival2',Object.assign({eventStartDate:ymd(new Date(now.getTime()-60*864e5)),numOfRows:40,pageNo:1},c)));
-  else if(kind==='stay') calls.push(tourCall('searchStay2',Object.assign({numOfRows:40,pageNo:1},c)));
-  else calls.push(tourCall('areaBasedList2',Object.assign({numOfRows:40,pageNo:1,contentTypeId:t},c)));
+  if(kind==='event') calls.push(tourCall('KorService2/searchFestival2',Object.assign({eventStartDate:ymd(new Date(now.getTime()-60*864e5)),numOfRows:40,pageNo:1},c)));
+  else if(kind==='stay') calls.push(tourCall('KorService2/searchStay2',Object.assign({numOfRows:40,pageNo:1},c)));
+  else calls.push(tourCall('KorService2/areaBasedList2',Object.assign({numOfRows:40,pageNo:1,contentTypeId:t},c)));
  }));
  const seen={}, out=[];
  (await Promise.all(calls)).forEach(a=>a.forEach(x=>{
@@ -1213,8 +1214,30 @@ async function tourData(kind){
  if(kind==='event') out.sort((a,b)=>(a.s>b.s)-(a.s<b.s));
  return out.slice(0,40);
 }
+
+/* 고캠핑: 전국 목록(지역 필터 없음)을 한 번 받아 줄인 형태로 저장해 두고, 지역별로 걸러서 보여준다 */
+const CAMP_DO={seoul:['서울'],busan:['부산'],daegu:['대구'],incheon:['인천'],gwangju:['광주'],daejeon:['대전'],ulsan:['울산'],sejong:['세종'],gyeonggi:['경기'],gangwon:['강원'],chungbuk:['충청북','충북'],chungnam:['충청남','충남'],jeonbuk:['전라북','전북'],jeonnam:['전라남','전남'],gyeongbuk:['경상북','경북'],gyeongnam:['경상남','경남'],jeju:['제주']};
+async function campAll(){
+ const c=store.get('wr_camp',null); if(c&&c.list&&c.list.length&&Date.now()-c.t<7*864e5) return c.list;
+ const list=[]; const seen={};
+ for(let p=1;p<=14;p++){
+  const a=await tourCall('GoCamping/basedList',{numOfRows:500,pageNo:p});
+  a.forEach(x=>{const k=x.contentId||x.facltNm; if(!x.facltNm||seen[k]) return; seen[k]=1;
+   list.push({n:String(x.facltNm),a:String(x.addr1||''),d:String(x.doNm||''),s:String(x.sigunguNm||''),k:String(x.induty||''),t:String(x.tel||''),l:String(x.lineIntro||'')})});
+  if(a.length<500) break;
+ }
+ if(!list.length) throw new Error('nocamp');
+ store.set('wr_camp',{t:Date.now(),list:list}); return list;
+}
+async function campData(){
+ const {region:r,sub}=G.last, all=await campAll(), pre=CAMP_DO[r.id]||[];
+ let m=all.filter(x=>pre.some(p=>x.d.indexOf(p)===0));
+ if(sub) m=m.filter(x=>x.s&&(x.s===sub||x.s.indexOf(sub)===0||sub.indexOf(x.s)===0));
+ m.sort((a,b)=>(b.l?1:0)-(a.l?1:0));
+ return m.slice(0,40).map(x=>({n:x.n,addr:x.a,tel:x.t,cat3:'',s:'',e:'',kind:x.k}));
+}
 const fmtD=d=>d&&d.length===8?(+d.slice(4,6))+'/'+(+d.slice(6)):'';
-function curKind(){return G.tab==='food'?'food':G.tab==='see'?(G.see==='see'?'see':'play'):G.tab==='camp'?(G.stay==='stay'?'stay':null):'event'}
+function curKind(){return G.tab==='food'?'food':G.tab==='see'?(G.see==='see'?'see':'play'):G.tab==='camp'?(G.stay==='stay'?'stay':'camp'):'event'}
 function renderTour(){
  if(!TOUR.on||!G.last) return false;
  const {region:r,sub}=G.last, panel=$('#panel'), name=destName(r,sub), kind=curKind(); if(!kind) return false;
@@ -1226,14 +1249,14 @@ function renderTour(){
  if(!Array.isArray(st)){
   if(!st){TOUR.cache[key]='loading';
    tourData(kind).then(a=>{TOUR.cache[key]=a}).catch(()=>{TOUR.cache[key]='err'}).then(()=>{if(G.last&&infoKey(G.last.region,G.last.sub)+'|'+curKind()===key&&$('#s-result').classList.contains('on')) renderPanel()})}
-  panel.innerHTML=head+'<div class="list"><div class="card empty"><div class="tx"><p>한국관광공사에서 '+esc(name)+' 정보를 불러오는 중…</p></div></div></div>'; bind(); return true;
+  panel.innerHTML=head+'<div class="list"><div class="card empty"><div class="tx"><p>한국관광공사에서 '+esc(name)+' 정보를 불러오는 중…'+(kind==='camp'?' (캠핑장은 처음 한 번만 몇 초 걸려요)':'')+'</p></div></div></div>'; bind(); return true;
  }
  let arr=st;
  if(kind==='food'&&G.fcat!=='all') arr=arr.filter(x=>x.cat3===G.fcat);
  const today=ymd(new Date());
- const cards=kind==='event'?arr.map(e=>'<div class="card"><div class="tx"><h3>'+esc(e.n)+'<span class="live">'+(e.s<=today?'진행 중':'예정')+'</span></h3><p>'+esc(fmtD(e.s)+'~'+fmtD(e.e)+(e.addr?' · '+e.addr:''))+'</p></div><a class="go" href="'+esc(mapUrl(name+' '+e.n))+'" target="_blank" rel="noopener">지도</a></div>').join(''):arr.map(x=>itemCard(r,sub,{n:x.n,d:x.addr+(x.tel?' · '+x.tel:'')})).join('');
- const empty=kind==='event'?emptyCard('지금 열리거나 곧 열리는 행사가 없어요.',name+' 축제'):emptyCard('불러온 정보가 없어요. 지도에서 직접 찾아보세요.',name+' '+({food:'맛집',see:'가볼만한곳',play:'체험',stay:'숙박'}[kind]));
- panel.innerHTML=head+'<div class="list">'+(cards||empty)+'</div><p class="note">정보 제공: 한국관광공사 TourAPI</p>'; bind(); return true;
+ const cards=kind==='event'?arr.map(e=>'<div class="card"><div class="tx"><h3>'+esc(e.n)+'<span class="live">'+(e.s<=today?'진행 중':'예정')+'</span></h3><p>'+esc(fmtD(e.s)+'~'+fmtD(e.e)+(e.addr?' · '+e.addr:''))+'</p></div><a class="go" href="'+esc(mapUrl(name+' '+e.n))+'" target="_blank" rel="noopener">지도</a></div>').join(''):arr.map(x=>itemCard(r,sub,{n:x.n,d:(x.kind?x.kind.replace(/,/g,' · ')+' · ':'')+x.addr+(x.tel?' · '+x.tel:'')})).join('');
+ const empty=kind==='event'?emptyCard('지금 열리거나 곧 열리는 행사가 없어요.',name+' 축제'):emptyCard('불러온 정보가 없어요. 지도에서 직접 찾아보세요.',name+' '+({food:'맛집',see:'가볼만한곳',play:'체험',stay:'숙박',camp:'캠핑장'}[kind]));
+ panel.innerHTML=head+'<div class="list">'+(cards||empty)+'</div><p class="note">정보 제공: 한국관광공사 '+(kind==='camp'?'고캠핑':'TourAPI')+'</p>'; bind(); return true;
 }
 function renderPanel0(){
  if(renderTour()) return;

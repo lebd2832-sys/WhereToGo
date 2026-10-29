@@ -29,9 +29,9 @@ class Bridge(private val web: WebView, private val rawKey: String) {
             var ok = false
             var text: String
             try {
-                if (!endpoint.matches(Regex("[A-Za-z0-9]+"))) throw IllegalArgumentException("bad endpoint")
+                if (!endpoint.matches(Regex("[A-Za-z0-9]+(/[A-Za-z0-9]+)?"))) throw IllegalArgumentException("bad endpoint")
                 val p = JSONObject(paramsJson)
-                val sb = StringBuilder("https://apis.data.go.kr/B551011/KorService2/")
+                val sb = StringBuilder("https://apis.data.go.kr/B551011/")
                     .append(endpoint)
                     .append("?serviceKey=").append(Uri.encode(key))
                     .append("&MobileOS=AND&MobileApp=WhereToGo&_type=json")

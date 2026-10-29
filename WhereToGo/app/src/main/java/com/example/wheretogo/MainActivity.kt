@@ -18,8 +18,10 @@ import java.net.URLDecoder
 import kotlin.concurrent.thread
 
 /** 화면(HTML)이 한국관광공사 TourAPI를 부를 때 쓰는 다리. 인증키는 앱 안(BuildConfig)에만 있고 화면 코드에는 없다. */
-class Bridge(private val web: WebView, private val rawKey: String) {
-    private val key: String = if (rawKey.contains("%")) URLDecoder.decode(rawKey, "UTF-8") else rawKey
+class Bridge(private val web: WebView, rawKey: String, rawCamp: String) {
+    private fun dec(s: String) = if (s.contains("%")) URLDecoder.decode(s, "UTF-8") else s
+    private val key: String = dec(rawKey)
+    private val campKey: String = dec(rawCamp).ifEmpty { key }  // 고캠핑 키가 없으면 관광공사 키를 그대로 사용
 
     @JavascriptInterface fun hasKey(): Boolean = key.isNotEmpty()
 
@@ -33,7 +35,7 @@ class Bridge(private val web: WebView, private val rawKey: String) {
                 val p = JSONObject(paramsJson)
                 val sb = StringBuilder("https://apis.data.go.kr/B551011/")
                     .append(endpoint)
-                    .append("?serviceKey=").append(Uri.encode(key))
+                    .append("?serviceKey=").append(Uri.encode(if (endpoint.startsWith("GoCamping")) campKey else key))
                     .append("&MobileOS=AND&MobileApp=WhereToGo&_type=json")
                 for (k in p.keys()) sb.append("&").append(Uri.encode(k)).append("=").append(Uri.encode(p.get(k).toString()))
                 val c = URL(sb.toString()).openConnection() as HttpURLConnection
@@ -61,7 +63,7 @@ class MainActivity : AppCompatActivity() {
             domStorageEnabled = true            // 설정·남은 기회·내가 추가한 곳 저장(localStorage)
             mediaPlaybackRequiresUserGesture = false
         }
-        web.addJavascriptInterface(Bridge(web, BuildConfig.TOUR_KEY), "Native")
+        web.addJavascriptInterface(Bridge(web, BuildConfig.TOUR_KEY, BuildConfig.CAMP_KEY), "Native")
         web.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(v: WebView, r: WebResourceRequest): Boolean {
                 // 지도 열기 등 바깥 링크는 기본 브라우저/지도 앱으로

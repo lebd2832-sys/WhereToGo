@@ -3,7 +3,7 @@ android {
     namespace = "com.example.wheretogo"
     compileSdk = 34
     defaultConfig { applicationId = "com.example.wheretogo"; minSdk = 24; targetSdk = 34; versionCode = 1; versionName = "0.2"
-        buildConfigField("String", "TOUR_KEY", "\"" + (System.getenv("TOUR_API_KEY") ?: "") + "\"") }
+        buildConfigField("String", "TOUR_KEY", "\"" + (System.getenv("TOUR_API_KEY") ?: "").filter { it.isLetterOrDigit() || it in "%+/=_-" } + "\"") }
     buildFeatures { buildConfig = true }
     buildTypes { release { isMinifyEnabled = false } }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }

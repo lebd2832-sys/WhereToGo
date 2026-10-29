@@ -40,8 +40,11 @@ class Bridge(private val web: WebView, rawKey: String, rawCamp: String) {
                 for (k in p.keys()) sb.append("&").append(Uri.encode(k)).append("=").append(Uri.encode(p.get(k).toString()))
                 val c = URL(sb.toString()).openConnection() as HttpURLConnection
                 c.connectTimeout = 10000; c.readTimeout = 12000
-                text = c.inputStream.bufferedReader().use { it.readText() }
-                ok = true
+                val code = c.responseCode
+                val stream = if (code in 200..299) c.inputStream else (c.errorStream ?: c.inputStream)
+                text = stream.bufferedReader().use { it.readText() }
+                ok = code in 200..299
+                if (!ok) text = "HTTP " + code + " " + text.take(120)
             } catch (e: Exception) { text = e.message ?: "error" }
             val js = "window.__tourCb(" + JSONObject.quote(id) + "," + ok + "," + JSONObject.quote(text) + ")"
             web.post { web.evaluateJavascript(js, null) }

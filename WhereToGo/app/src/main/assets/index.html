@@ -1,6 +1,4 @@
-<!doctype html>
-<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>전국어디 놀러갈까?</title>
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>전국어디 놀러갈까?</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -280,8 +278,7 @@ a{color:inherit}
   .screen,.swap,.pick strong,.dot{animation:none;transition:none}
   .screen{transform:none}
 }
-</style>
-</head><body>
+</style></head><body>
 
 <main class="device">
  <div class="splash" id="splash" role="img" aria-label="어디 갈까">
@@ -750,7 +747,9 @@ const setRot=a=>rotG.setAttribute('transform','rotate('+a.toFixed(2)+' 160 160)'
 const idxAt=a=>Math.floor((((-a)%360)+360)%360/(360/G.items.length))%G.items.length;
 function wiggle(){ if(RM||!pointer.animate) return; pointer.animate([{transform:'rotate(-20deg)'},{transform:'rotate(0deg)'}],{duration:130,easing:'ease-out'}); }
 
+let _swT=0;
 function setupWheel(stage,pool){
+ if(stage===2){const n=performance.now(); if(n-_swT<1500) return; _swT=n}
  G.stage=stage; G.pool=pool;
  const shown=pool.length>MAX_SLICES?shuffle(pool.slice()).slice(0,MAX_SLICES):pool.slice();
  G.items=shuffle(shown);
@@ -1010,8 +1009,9 @@ window.addEventListener('resize',()=>{ if(!pbz.hidden){ pbFit(); if(!PBS) pbDraw
 
 /* hold to charge */
 const holdBtn=$('#holdBtn'), ring=$('#ring'), shaker=$('#shaker');
+let _heT=0;
 function holdStart(){
- if(G.busy||G.holding) return;
+ if(G.busy||G.holding||performance.now()-_heT<700) return;
  if(G.stage===1&&!G.consumed&&left()<=0){toast('오늘 기회를 모두 썼어요');return}
  G.holding=true; G.t0=performance.now(); G.p=0; G.lastFx=0; audio();
  ring.classList.add('charging'); G.raf=requestAnimationFrame(chargeLoop);
@@ -1029,7 +1029,7 @@ function chargeLoop(now){
 }
 function holdEnd(){
  if(!G.holding) return;
- G.holding=false; cancelAnimationFrame(G.raf); ring.classList.remove('charging'); shaker.style.transform='';
+ _heT=performance.now(); G.holding=false; cancelAnimationFrame(G.raf); ring.classList.remove('charging'); shaker.style.transform='';
  const p=Math.max(.2,Math.min(1,(performance.now()-G.t0)/CHARGE_MS));
  setRot(G.rot);
  if(G.stage===1) consume();
@@ -1080,7 +1080,7 @@ function landed(k){
   later(()=>showResult(G.region,it.label),1500);
  }
 }
-$('#nextBtn').addEventListener('click',()=>{ if(G.region&&G.region.subs) setupWheel(2,G.region.subs.map(n=>({label:n}))); });
+$('#nextBtn').addEventListener('click',()=>{ if(performance.now()-_heT<900) return; if(G.region&&G.region.subs) setupWheel(2,G.region.subs.map(n=>({label:n}))); });
 function leaveSpin(){
  pbStop(); clearTimers(); cancelAnimationFrame(G.spinRaf); cancelAnimationFrame(G.raf); G.holding=false; shaker.style.transform=''; ring.classList.remove('charging'); setBusy(false);
  refreshMap(); show('s-map');
@@ -1140,6 +1140,7 @@ function renderPanel(){
   $$('[data-del]',p).forEach(b=>b.addEventListener('click',()=>{const all=userAll(),k=userKey();all[k]=(all[k]||[]).filter(x=>x.id!==b.dataset.del);store.set('wr_user',all);renderPanel();toast('삭제했어요')}));
  }
  if((G.tab==='food'||G.tab==='see')&&!(TOUR.on&&Array.isArray(TOUR.cache[infoKey(G.last.region,G.last.sub)+'|'+curKind()]))&&!(G.tab==='food'&&mjFor(G.last.region,G.last.sub).length)&&!(G.tab==='see'&&G.see==='see'&&tsFor(G.last.region,G.last.sub).length)) p.insertAdjacentHTML('beforeend','<p class="note">검수용 프로토타입이에요. 가게·명소 정보는 샘플이라 출시 전에 확인이 필요해요.</p>');
+ if(TOUR.on&&G.last&&curKind()){const ek=infoKey(G.last.region,G.last.sub)+'|'+curKind();if(TOUR.err&&TOUR.err[ek]) p.insertAdjacentHTML('beforeend','<p class="note">※ 한국관광공사 정보를 불러오지 못해 샘플을 보여줘요. 사유: '+esc(TOUR.err[ek])+'</p>')}
  p.scrollTop=top;
 }
 const addSheet=$('#addSheet');
@@ -1182,7 +1183,8 @@ const FCATS=[['all','전체'],['A05020100','한식'],['A05020200','서양식'],[
 function tourCall(ep,p){return new Promise((res,rej)=>{
  const id='t'+(++TOUR.n), to=setTimeout(()=>{delete TOUR.cb[id];rej(new Error('timeout'))},15000);
  TOUR.cb[id]=(ok,t)=>{clearTimeout(to);if(!ok) return rej(new Error(t));
-  try{const j=JSON.parse(t),h=j.response&&j.response.header;if(!h||h.resultCode!=='0000') return rej(new Error((h&&h.resultMsg)||'bad'));
+  let j;try{j=JSON.parse(t)}catch(e){return rej(new Error(String(t).replace(/\s+/g,' ').slice(0,160)))}
+  try{const h=j.response&&j.response.header;if(!h||h.resultCode!=='0000') return rej(new Error((h&&(h.resultCode+' '+h.resultMsg))||String(t).slice(0,120)));
    const it=j.response.body&&j.response.body.items;let a=it&&it.item?it.item:[];if(!Array.isArray(a)) a=[a];res(a)}catch(e){rej(e)}};
  window.Native.tour(id,ep,JSON.stringify(p));
 })}
@@ -1211,6 +1213,11 @@ async function tourData(kind){
   if(kind==='event'&&o.e&&o.e<ymd(now)) return;
   out.push(o);
  }));
+ if(kind==='event'&&!out.length&&codes.some(c=>c.lDongSignguCd)){
+  const base=[...new Set(codes.map(c=>c.lDongRegnCd))];
+  const more=await Promise.all(base.map(rc=>tourCall('KorService2/searchFestival2',{eventStartDate:ymd(new Date(now.getTime()-60*864e5)),numOfRows:40,pageNo:1,lDongRegnCd:rc})));
+  more.forEach(a=>a.forEach(x=>{if(!x.title||seen[x.contentid]) return; seen[x.contentid]=1; if(x.eventenddate&&x.eventenddate<ymd(now)) return; out.push({n:String(x.title).trim(),addr:x.addr1||'',tel:x.tel||'',cat3:'',s:x.eventstartdate||'',e:x.eventenddate||''})}));
+ }
  if(kind==='event') out.sort((a,b)=>(a.s>b.s)-(a.s<b.s));
  return out.slice(0,40);
 }
@@ -1246,7 +1253,7 @@ function renderFood(){
  const key=infoKey(r,sub)+'|food', st=TOUR.on?TOUR.cache[key]:'off';
  if(!mj.length&&(!TOUR.on||st==='err')) return false;
  if(TOUR.on&&!st){TOUR.cache[key]='loading';
-  tourData('food').then(a=>{TOUR.cache[key]=a}).catch(()=>{TOUR.cache[key]='err'}).then(()=>{if(G.last&&infoKey(G.last.region,G.last.sub)+'|'+curKind()===key&&$('#s-result').classList.contains('on')) renderPanel()})}
+  tourData('food').then(a=>{TOUR.cache[key]=a}).catch(e=>{TOUR.cache[key]='err';TOUR.err=TOUR.err||{};TOUR.err[key]=String(e&&e.message||e)}).then(()=>{if(G.last&&infoKey(G.last.region,G.last.sub)+'|'+curKind()===key&&$('#s-result').classList.contains('on')) renderPanel()})}
  const keep=(panel.querySelector('.cats')||{}).scrollLeft||0, f=c=>G.fcat==='all'||c===G.fcat;
  let html=chipRow(FCATS,G.fcat,'맛집 종류'), n=0;
  const A=mj.filter(x=>f(x[4]));
@@ -1286,7 +1293,7 @@ function renderTour(){
  const bind=()=>{if(!head) return; catScroll($('.cats',panel),keep);$$('.cat',panel).forEach(b=>b.addEventListener('click',()=>{G[bk]=b.dataset.cat;renderPanel()}))};
  if(!Array.isArray(st)){
   if(!st){TOUR.cache[key]='loading';
-   tourData(kind).then(a=>{TOUR.cache[key]=a}).catch(()=>{TOUR.cache[key]='err'}).then(()=>{if(G.last&&infoKey(G.last.region,G.last.sub)+'|'+curKind()===key&&$('#s-result').classList.contains('on')) renderPanel()})}
+   tourData(kind).then(a=>{TOUR.cache[key]=a}).catch(e=>{TOUR.cache[key]='err';TOUR.err=TOUR.err||{};TOUR.err[key]=String(e&&e.message||e)}).then(()=>{if(G.last&&infoKey(G.last.region,G.last.sub)+'|'+curKind()===key&&$('#s-result').classList.contains('on')) renderPanel()})}
   panel.innerHTML=head+(kind==='see'?tsHtml(r,sub):'')+'<div class="list"><div class="card empty"><div class="tx"><p>한국관광공사에서 '+esc(name)+' 정보를 불러오는 중…'+(kind==='camp'?' (캠핑장은 처음 한 번만 몇 초 걸려요)':'')+'</p></div></div></div>'; bind(); return true;
  }
  let arr=st;
@@ -1394,5 +1401,4 @@ buildTiles(); buildChips(); buildDots(); renderCoins(); refreshMap(); syncSet();
 $$('.screen').forEach(s=>s.setAttribute('aria-hidden',s.classList.contains('on')?'false':'true'));
 })();
 </script>
-
 </body></html>

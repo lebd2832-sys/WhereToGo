@@ -25,6 +25,28 @@ class Bridge(private val web: WebView, rawKey: String, rawCamp: String) {
 
     @JavascriptInterface fun hasKey(): Boolean = key.isNotEmpty()
 
+    /** 공유하기: 시스템 공유창(설치된 모든 앱) */
+    @JavascriptInterface
+    fun share(text: String) {
+        web.post {
+            val i = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, text) }
+            web.context.startActivity(Intent.createChooser(i, "공유하기").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
+    }
+
+    /** 특정 앱(카카오톡·인스타그램 등)으로 바로 공유. 설치되어 있지 않으면 false → 화면이 복사로 대신 처리 */
+    @JavascriptInterface
+    fun shareTo(pkg: String, text: String): Boolean {
+        if (!pkg.matches(Regex("[A-Za-z0-9_.]+"))) return false
+        return try {
+            val i = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"; setPackage(pkg); putExtra(Intent.EXTRA_TEXT, text)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            web.context.startActivity(i); true
+        } catch (e: Exception) { false }
+    }
+
     @JavascriptInterface
     fun tour(id: String, endpoint: String, paramsJson: String) {
         thread {
@@ -72,6 +94,11 @@ class MainActivity : AppCompatActivity() {
                 // 지도 열기 등 바깥 링크는 기본 브라우저/지도 앱으로
                 if (r.url.scheme == "http" || r.url.scheme == "https") {
                     startActivity(Intent(Intent.ACTION_VIEW, r.url)); return true
+                }
+                // 전화(tel:)·문자(sms:) 같은 링크는 해당 앱으로
+                if (r.url.scheme == "tel" || r.url.scheme == "sms" || r.url.scheme == "smsto" || r.url.scheme == "mailto") {
+                    try { startActivity(Intent(Intent.ACTION_VIEW, r.url)) } catch (e: Exception) { }
+                    return true
                 }
                 return false
             }

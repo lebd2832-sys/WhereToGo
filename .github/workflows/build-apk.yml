@@ -1,7 +1,7 @@
 name: Build APK
 on:
   push:
-    branches: [main]
+    branches: [main, 'claude/**']
     tags: ['v*']
   workflow_dispatch:
 permissions:
@@ -28,3 +28,12 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with: { files: WhereToGo.apk }
+      - name: Release (claude branch build)
+        if: startsWith(github.ref, 'refs/heads/claude/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: WhereToGo.apk
+          tag_name: build-${{ github.run_number }}
+          name: 빌드 ${{ github.run_number }}
+          prerelease: true
+          target_commitish: ${{ github.sha }}
